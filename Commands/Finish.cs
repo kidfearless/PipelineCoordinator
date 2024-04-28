@@ -14,9 +14,8 @@ internal class FinishCommand(GitService _git, DotNetService _dotnet) : ICommand
 
   public async ValueTask ExecuteAsync(IConsole console)
   {
-    console.Output.WriteLine($"Finishing development for story {StoryId}.");
+    console.WriteLine($"Finishing development for story {StoryId}.");
 
-    await _git.InitializeReposAsync(StoryId);
-    await _dotnet.InitializeRepos(StoryId);
+    await _git.FinishReposAsync(StoryId);
   }
 }

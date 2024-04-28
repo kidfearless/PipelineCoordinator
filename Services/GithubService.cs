@@ -1,12 +1,6 @@
 ﻿global using CliWrap;
 global using CliWrap.Buffered;
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
 using CliFx.Infrastructure;
 
 
@@ -24,13 +18,13 @@ internal class GithubService(IConsole _console)
 
   public async Task<BufferedCommandResult> CloneRepo(string path, string repoName)
   {
-    _console.Output.WriteLine("Deleting old repos...");
+    _console.WriteLine("Deleting old repos...");
     if (!Directory.Exists(path))
     {
       Directory.CreateDirectory(path);
     }
 
-    _console.Output.WriteLine($"Cloning {repoName}...");
+    _console.WriteLine($"Cloning {repoName}...");
     var result = await GH()
         .WithArguments(@$"repo clone {repoName} {path}")
         .WithWorkingDirectory(path)

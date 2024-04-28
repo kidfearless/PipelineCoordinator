@@ -1,3 +1,6 @@
 ﻿namespace PipelineCoordinator.Models;
 
-public record DirectoryConfiguration(string RootDirectory, List<RepositoryInfo> Repositories);
+internal record DirectoryConfiguration(string RootDirectory, bool DisableUnitTests, IReadOnlyList<RepositoryInfo> Repositories)
+{
+  public IEnumerable<RepositoryInfo> NugetPackages => Repositories.Where(r => r.IsNuget);
+}

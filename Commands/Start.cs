@@ -1,11 +1,4 @@
-﻿
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace PipelineCoordinator.Commands;
+﻿namespace PipelineCoordinator.Commands;
 using CliFx;
 using CliFx.Attributes;
 using CliFx.Infrastructure;
@@ -21,9 +14,10 @@ internal class StartCommand(GitService _git, DotNetService _dotnet) : ICommand
 
   public async ValueTask ExecuteAsync(IConsole console)
   {
-    console.Output.WriteLine($"Started feature development for story {StoryId}.");
+    console.WriteLine($"Started feature development for story {StoryId}.");
 
     await _git.InitializeReposAsync(StoryId);
     await _dotnet.InitializeRepos(StoryId);
+    await _git.MarkFeaturesAsync(StoryId);
   }
 }

@@ -2,4 +2,4 @@
 
 namespace PipelineCoordinator.Models;
 
-public record TopLevelPackage([JsonProperty("id")] string Name, string RequestedVersion, string ResolvedVersion);
+internal record TopLevelPackage([JsonProperty("id")] string Name, string RequestedVersion, string ResolvedVersion);

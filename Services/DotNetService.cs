@@ -1,12 +1,11 @@
-﻿using System.Drawing;
-using System.IO;
-using System.Xml;
+﻿using System.Xml;
 
 using CliFx.Infrastructure;
 
 using Newtonsoft.Json;
 
 using PipelineCoordinator.Models;
+using Microsoft.Build.Construction;
 
 namespace PipelineCoordinator.Services;
 
@@ -19,7 +18,7 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
 
   public async Task InitializeRepos(string storyId)
   {
-    var featureDirectory = Path.Combine(_directory.RootDirectory, $"feature/story-{storyId}");
+    var featureDirectory = Path.Combine(_directory.RootDirectory, storyId);
     await RestoreSolutionsAsync(featureDirectory, storyId);
     await AddProjectsToSolutionsAsync(featureDirectory, storyId);
     await ReplaceNugetWithLocalReferencesAsync(featureDirectory, storyId);
@@ -46,7 +45,6 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
 
   private void AddLocalReference(string csprojPath, string importPath, string projectName)
   {
-
     var xml = File.ReadAllText(csprojPath);
     var doc = new XmlDocument();
     doc.LoadXml(xml);
@@ -87,14 +85,53 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
 
   private async Task DisableUnitTestsAsync(string featureDirectory, string storyId)
   {
-    var solutionFiles = Directory.GetFiles(featureDirectory, "*.sln", SearchOption.AllDirectories);
-    var solutionDirectories = solutionFiles.Select(s => Path.GetDirectoryName(s)!);
-    foreach (var solution in solutionFiles)
+    if (!_directory.DisableUnitTests)
     {
-      await RestoreAsync(solution);
+      return;
+    }
+
+    var originalCsProjFiles = Directory
+      .GetFiles(featureDirectory, "*.csproj", SearchOption.AllDirectories)
+      .Where(f => !f.Contains(".override") && f.Contains("Test"));
+
+    foreach (var testProject in originalCsProjFiles)
+    {
+      // open the csproj file
+      var xml = await File.ReadAllTextAsync(testProject);
+      var doc = new XmlDocument();
+      doc.LoadXml(xml);
+
+      // remove all files from the project
+      var itemGroupElement = doc.CreateElement("ItemGroup");
+      var compileRemoveElement = doc.CreateElement("Compile");
+      compileRemoveElement.SetAttribute("Remove", "**");
+      var contentRemoveElement = doc.CreateElement("Content");
+      contentRemoveElement.SetAttribute("Remove", "**");
+      var embeddedResourceRemoveElement = doc.CreateElement("EmbeddedResource");
+      embeddedResourceRemoveElement.SetAttribute("Remove", "**");
+      var noneRemoveElement = doc.CreateElement("None");
+      noneRemoveElement.SetAttribute("Remove", "**");
+
+      itemGroupElement.AppendChild(compileRemoveElement);
+      itemGroupElement.AppendChild(contentRemoveElement);
+      itemGroupElement.AppendChild(embeddedResourceRemoveElement);
+      itemGroupElement.AppendChild(noneRemoveElement);
+      doc.DocumentElement.AppendChild(itemGroupElement);
+
+      // remove any project references
+      var projectReferences = doc.SelectNodes("//ProjectReference");
+      if (projectReferences != null)
+      {
+        foreach (XmlNode projectReference in projectReferences)
+        {
+          projectReference.ParentNode.RemoveChild(projectReference);
+        }
+      }
+
+      // save the updated csproj file
+      await File.WriteAllTextAsync(testProject, doc.OuterXml);
     }
   }
-
 
 
   private async Task AddProjectsToSolutionsAsync(string featureDirectory, string storyId)
@@ -109,13 +146,15 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
       foreach (var project in projects)
       {
         var projectPath = Path.Combine(solution, project);
-        foreach (var nugetProject in _directory.Repositories.Where(r => r.IsNuget))
+
+        foreach (var nugetProject in _directory.NugetPackages)
         {
           var hasPackage = await HasNugetPackageAsync(projectPath, nugetProject.ProjectName);
           if (hasPackage)
           {
-            var nugetPath = Path.Combine(_directory.RootDirectory, $"feature/story-{storyId}", nugetProject.Path);
-            await AddProjectToSolutionAsync(solution, nugetPath);
+            var nugetPath = Path.Combine(_directory.RootDirectory, storyId, nugetProject.Path);
+            var overrideProjectPath = CreateOverrideCsproj(projectPath);
+            await AddProjectToSolutionAsync(solution, overrideProjectPath);
             // TODO: Scan for sub projects
           }
         }
@@ -123,22 +162,53 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
     }
   }
 
+  private string CreateOverrideCsproj(string projectPath)
+  {
+    var newPath = projectPath.Replace(".csproj", ".override.csproj")!;
+    if (File.Exists(newPath))
+    {
+      return newPath;
+    }
+
+    var project = ProjectRootElement.Create();
+    project.Sdk = "Microsoft.NET.Sdk";
+
+    var _ = project.AddImport(projectPath);
+
+    var itemGroup = project.AddItemGroup();
+    var nugetPackages = _directory.NugetPackages;
+    foreach (var nuget in nugetPackages)
+    {
+      var packageReference = itemGroup.AddItem("PackageReference", "");
+      packageReference.Remove = nuget.ProjectName;
+    }
+
+    project.Save(newPath);
+
+    return newPath;
+  }
+
   private async Task ReplaceNugetWithLocalReferencesAsync(string featureDirectory, string storyId)
   {
     // scan for all csproj files
     var csprojFiles = Directory.GetFiles(featureDirectory, "*.csproj", SearchOption.AllDirectories);
+    var projects = _directory.NugetPackages
+      .SelectMany(nuget => csprojFiles
+        .Select(csprojFile => (nuget, csprojFile)));
 
-    foreach (var csprojFile in csprojFiles)
+    foreach (var (nuget, csprojFile) in projects)
     {
-      foreach(var nuget in _directory.Repositories.Where(r => r.IsNuget))
+      if (!csprojFile.Contains(".override"))
       {
-        var hasNugetPackage = await HasNugetPackageAsync(csprojFile, nuget.ProjectName);
-        var nugetPath = Path.Combine(featureDirectory, nuget.Path);
+        continue;
+      }
 
-        if (hasNugetPackage)
-        {
-          AddLocalReference(csprojFile, nugetPath, nuget.ProjectName);
-        }
+      var referenceCsproj = csprojFile.Replace(".override", "");
+      var hasNugetPackage = await HasNugetPackageAsync(referenceCsproj, nuget.ProjectName);
+      var nugetPath = Path.Combine(featureDirectory, nuget.Path);
+      if (hasNugetPackage)
+      {
+        AddLocalReference(csprojFile, nugetPath, nuget.ProjectName);
       }
     }
   }

@@ -1,6 +1,4 @@
-﻿using System.ComponentModel.Design;
-
-using CliFx;
+﻿using CliFx;
 using CliFx.Infrastructure;
 
 using Microsoft.Extensions.Configuration;
@@ -35,7 +33,16 @@ var provider = serviceCollection.BuildServiceProvider();
 builder.UseTypeActivator(commandTypes => provider);
 
 
-
 var con = builder.Build();
-string[] argss = ["start", "138880"];
-await con.RunAsync(argss);
+if (System.Diagnostics.Debugger.IsAttached)
+{
+  Console.WriteLine("Please enter a command to run");
+  var command = Console.ReadLine()!;
+  Console.WriteLine("Please enter a story number to run against");
+  var story = Console.ReadLine()!;
+  await con.RunAsync([command, story]);
+}
+else
+{
+  await con.RunAsync(args);
+}
