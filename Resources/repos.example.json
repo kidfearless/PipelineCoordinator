@@ -1,0 +1,16 @@
+﻿{
+	"DirectoryInfo": {
+		"RootDirectory": "C:\\Users\\Public\\Documents",
+		"Repositories": [
+			{
+				"path": "Mudblazor",
+				"gitUrl": "https://github.com/MudBlazor/MudBlazor.git"
+			},
+			{
+				"path": "JSCompiler",
+				"gitUrl": "https://github.com/MudBlazor/JSCompiler.git",
+				"isNuget": "true"
+			}
+		]
+	}
+}
