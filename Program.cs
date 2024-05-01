@@ -25,7 +25,7 @@ var configurationBuilder = new ConfigurationBuilder()
 var configuration = configurationBuilder.Build();
 
 serviceCollection.AddSingleton<IConfiguration>(configuration);
-serviceCollection.AddTransient<DirectoryConfiguration>(t => configuration.Get<AppSettings>()!.DirectoryInfo);
+serviceCollection.AddSingleton<DirectoryConfiguration>(t => configuration.Get<AppSettings>()!.DirectoryInfo);
 builder.AddCommand<StartCommand>();
 
 

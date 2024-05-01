@@ -14,20 +14,30 @@ internal class GitService(GithubService _github, IConsole _console, DirectoryCon
   public async Task InitializeReposAsync(string storyId)
   {
     var rootDirectory = Path.Combine(_directory.RootDirectory, storyId);
-    foreach (var repo in _directory.Repositories)
+    foreach (var repo in _directory.Repos)
     {
       var path = Path.Combine(rootDirectory, repo.Path);
 
       await CloneRepoAsync(path, repo.GithubUrl);
       await TrustRepoAsync(path);
       await CreateBranchAsync(path, storyId);
+      await AddOverridesToGitIgnoreAsync(path);
+    }
+  }
+
+  private async Task AddOverridesToGitIgnoreAsync(string path)
+  {
+    var gitIgnorePath = Path.Combine(path, ".gitignore");
+    if(File.Exists(gitIgnorePath))
+    {
+      await File.AppendAllTextAsync(gitIgnorePath, "*override.*");
     }
   }
 
   public async Task MarkFeaturesAsync(string storyId)
   {
     var rootDirectory = Path.Combine(_directory.RootDirectory, storyId);
-    foreach (var repo in _directory.Repositories)
+    foreach (var repo in _directory.Repos)
     {
       var path = Path.Combine(rootDirectory, repo.Path);
       await MarkFeatureAsync(path, storyId);
@@ -37,7 +47,7 @@ internal class GitService(GithubService _github, IConsole _console, DirectoryCon
   public async Task FinishReposAsync(string storyId)
   {
     var rootDirectory = Path.Combine(_directory.RootDirectory, storyId);
-    foreach (var repo in _directory.Repositories)
+    foreach (var repo in _directory.Repos)
     {
       var path = Path.Combine(rootDirectory, repo.Path);
       await FinishFeatureAsync(path, storyId);
@@ -101,7 +111,7 @@ internal class GitService(GithubService _github, IConsole _console, DirectoryCon
 
   private async Task MarkFeatureAsync(string repoDir, string storyId)
   {
-    var message = $"feature/story-{storyId} start";
+    var message = $"feature/story-{storyId}_start";
     _console.WriteLine($"Adding all files to start commit: {message}");
     var _1 = await Git
         .WithWorkingDirectory(repoDir)
@@ -111,13 +121,13 @@ internal class GitService(GithubService _github, IConsole _console, DirectoryCon
     _console.WriteLine($"Committing start commit: {message}");
     var _2 = await Git
         .WithWorkingDirectory(repoDir)
-        .WithArguments($"commit -m '{message}'")
-        .ExecuteAsync();
+        .WithArguments($"commit --message \"{message}\"")
+        .ExecuteBufferedAsync();
   }
 
   public async Task FinishFeatureAsync(string repoDir, string storyId)
   {
-    var startMessage = $"feature/story-{storyId} start";
+    var startMessage = $"feature/story-{storyId}_start";
     await RevertCommitAsync(repoDir, startMessage);
   }
 
