@@ -20,7 +20,7 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
   {
     var featureDirectory = Path.Combine(_directory.RootDirectory, storyId);
     await RestoreSolutionsAsync(featureDirectory, storyId);
-    //await TranslateSolutionsToRootAsync(featureDirectory, storyId);
+    await TranslateSolutionsToRootAsync(featureDirectory, storyId);
     await AddProjectsToSolutionsAsync(featureDirectory, storyId);
     await ReplaceNugetWithLocalReferencesAsync(featureDirectory, storyId);
     await AddMissingProjectsToSolutionAsync(featureDirectory, storyId);
@@ -36,40 +36,51 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
       foreach (var solutionFile in solutionFiles)
       {
         var solutionDirectory = Path.GetDirectoryName(solutionFile)!;
-        var solutionName = Path.GetFileNameWithoutExtension(solutionFile);
-        var overrideFileName = $"{solutionName}.override.sln";
-        var overrideSolutionFile = Path.Combine(solutionDirectory, overrideFileName);
+        var solutionName = Path.GetFileName(solutionFile);
+        var overrideFileName = solutionName.Replace(".sln", ".override.sln");
+        var overrideSolutionFile = Path.Combine(repoRoot, overrideFileName);
 
-        // Create override solution in the same location
-        File.Copy(solutionFile, overrideSolutionFile);
-
-        // Restore the override solution to allow cooperation
-        await RestoreAsync(solutionDirectory, overrideFileName);
+        await CreateSolutionAsync(repoRoot, Path.GetFileNameWithoutExtension(overrideFileName));
 
         // List projects in the solution
-        var projects = await GetProjectsInSolution(solutionDirectory);
-
-        // Remove all projects from the override solution
-        foreach (var project in projects)
-        {
-          await RemoveProjectFromSolutionAsync(overrideSolutionFile, project);
-        }
-
-        // Move the override solution to the root
-        var rootSolutionFile = Path.Combine(repoRoot, $"{solutionName}.override.sln");
-        File.Move(overrideSolutionFile, rootSolutionFile);
-
-        // Restore the solution
-        await RestoreAsync(repoRoot, overrideFileName);
+        var projects = await GetProjectsInSolution(solutionDirectory, solutionName);
 
         // Add the projects back to the solution
         foreach (var project in projects)
         {
           var projectPath = Path.Combine(solutionDirectory, project);
-          await AddProjectToSolutionAsync(rootSolutionFile, projectPath);
+          await AddProjectToSolutionAsync(overrideSolutionFile, projectPath);
         }
+        await CleanSolutionFileAsync(overrideSolutionFile);
       }
     }
+  }
+
+  private static async Task CleanSolutionFileAsync(string overrideSolutionFile)
+  {
+    // TODO: Remove the folder from the solution
+    // have to do this by hand as cli doesn't support removing folders
+    var fileText = await File.ReadAllLinesAsync(overrideSolutionFile);
+    var newFileText = new List<string>(fileText.Length);
+    for (int i = 0; i < fileText.Length; i++)
+    {
+      var line = fileText[i];
+      if (line.StartsWith("Project") && !line.Contains(".csproj"))
+      {
+        i++;// skip the next two lines
+        continue;
+      }
+      newFileText.Add(line);
+    }
+    File.Delete(overrideSolutionFile);
+    await File.WriteAllLinesAsync(overrideSolutionFile, newFileText);
+  }
+
+  private async Task CreateSolutionAsync(string solutionDirectory, string overrideFileName)
+  {
+    _ = await DotNet.WithWorkingDirectory(solutionDirectory)
+        .WithArguments($"new sln -n {overrideFileName}")
+        .ExecuteAsync();
   }
 
   private async Task RestoreSolutionsAsync(string featureDirectory, string storyId)
@@ -82,7 +93,6 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
       await RestoreAsync(directory, fileName);
     }
   }
-
   private async Task AddMissingProjectsToSolutionAsync(string featureDirectory, string storyId)
   {
     var rootDirectory = featureDirectory;
@@ -94,38 +104,52 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
       foreach (var solution in solutions)
       {
         var solutionFolder = Path.GetDirectoryName(solution)!;
-        var projects = await GetProjectsInSolution(solutionFolder);
+        var solutionName = Path.GetFileName(solution);
+        var projects = await GetProjectsInSolution(solutionFolder, solutionName);
+
         var overrides = projects.Where(p => p.Contains("override"));
         foreach (var projectFile in overrides)
         {
           var projectPath = Path.Combine(solutionFolder, projectFile);
-          var originalFile = projectPath.Replace(".override", "");
-          var projectDirectory = Path.GetDirectoryName(projectPath)!;
-          var projectName = Path.GetFileName(projectPath);
-          var subProjects = await GetProjectsInProject(projectDirectory, projectName);
-          foreach (var subFile in subProjects)
-          {
-            await AddProjectToSolutionAsync(solution, subFile);
-          }
+          await AddMissingProjectsRecursivelyAsync(solution, projectPath);
         }
+        await CleanSolutionFileAsync(solution);
       }
     }
   }
 
+  private async Task AddMissingProjectsRecursivelyAsync(string solutionPath, string projectPath)
+  {
+    var projectDirectory = Path.GetDirectoryName(projectPath)!;
+    var projectName = Path.GetFileName(projectPath);
+    var subProjects = await GetProjectsInProject(projectDirectory, projectName);
+
+    foreach (var subFile in subProjects)
+    {
+      var subProjectPath = Path.Combine(projectDirectory, subFile);
+      await AddProjectToSolutionAsync(solutionPath, subProjectPath);
+      await AddMissingProjectsRecursivelyAsync(solutionPath, subProjectPath);
+    }
+  }
 
   public async Task AddProjectToSolutionAsync(string solutionPath, string projectPath)
   {
     var solutionFolder = Path.GetDirectoryName(solutionPath)!;
+    var solutionName = Path.GetFileName(solutionPath);
     var result = await DotNet
         .WithWorkingDirectory(solutionFolder)
-        .WithArguments($"sln add {projectPath}")
-        .ExecuteAsync();
+        .WithArguments($"sln {solutionName} add {projectPath}")
+        .ExecuteBufferedAsync();
   }
 
   public async Task RemoveProjectFromSolutionAsync(string solutionPath, string projectPath)
   {
-    var result = await DotNet.WithWorkingDirectory(solutionPath)
-        .WithArguments($"sln remove {projectPath}")
+    var solutionFolder = Path.GetDirectoryName(solutionPath)!;
+    var solutionName = Path.GetFileName(solutionPath)!;
+
+    var result = await DotNet
+        .WithWorkingDirectory(solutionFolder)
+        .WithArguments($"sln {solutionName} remove {projectPath}")
         .ExecuteAsync();
   }
 
@@ -212,12 +236,13 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
   private async Task AddProjectsToSolutionsAsync(string featureDirectory, string storyId)
   {
     var solutionFiles = Directory.GetFiles(featureDirectory, "*.override.sln", SearchOption.AllDirectories);
-    var solutionDirectories = solutionFiles.Select(s => Path.GetDirectoryName(s)!);
 
-    foreach (var solution in solutionDirectories)
+    foreach (var solutionFile in solutionFiles)
     {
+      var solution = Path.GetDirectoryName(solutionFile)!;
+      var solutionName = Path.GetFileName(solutionFile);
       // TODO: Create override projects
-      var projects = await GetProjectsInSolution(solution);
+      var projects = await GetProjectsInSolution(solution, solutionName);
       foreach (var project in projects)
       {
         var projectPath = Path.Combine(solution, project);
@@ -228,8 +253,8 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
           if (hasPackage)
           {
             var overrideProjectPath = CreateOverrideCsproj(projectPath);
-            await AddProjectToSolutionAsync(solution, overrideProjectPath);// add override
-            await RemoveProjectFromSolutionAsync(solution, project);//remove original
+            await AddProjectToSolutionAsync(solutionFile, overrideProjectPath);// add override
+            await RemoveProjectFromSolutionAsync(solutionFile, project);//remove original
             // TODO: Scan for sub projects
           }
         }
@@ -276,8 +301,7 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
   private async Task ReplaceNugetWithLocalReferencesAsync(string featureDirectory, string storyId)
   {
     // scan for all csproj files
-    var csprojFiles = Directory.GetFiles(featureDirectory, "*.csproj", SearchOption.AllDirectories)
-      .Where(t => t.Contains(".override"));
+    var csprojFiles = Directory.GetFiles(featureDirectory, "*override.csproj", SearchOption.AllDirectories);
 
     foreach (var csprojFile in csprojFiles)
     {
@@ -286,10 +310,12 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
         var referenceCsproj = csprojFile.Replace(".override", "");
         var hasNugetPackage = await HasNugetPackageAsync(referenceCsproj, nuget.ProjectName);
         var nugetDirectory = Path.Combine(featureDirectory, nuget.Path);
+
         var nugetPath = Directory.GetFiles(nugetDirectory, "*.csproj", SearchOption.AllDirectories)
           .Where(t => !t.Contains("Test"))
-          .OrderByDescending(t => t.IndexOf("override"))
+          .OrderByDescending(t => t.Contains("override"))
           .First();
+
         if (hasNugetPackage)
         {
           AddLocalReference(csprojFile, nugetPath, nuget.ProjectName);
@@ -298,11 +324,11 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
     }
   }
 
-  private async Task<List<string>> GetProjectsInSolution(string solutionFolder)
+  private async Task<List<string>> GetProjectsInSolution(string solutionFolder, string solutionFileName)
   {
     var commandResult = await DotNet
         .WithWorkingDirectory(solutionFolder)
-        .WithArguments("sln list")
+        .WithArguments($"sln {solutionFileName} list")
         .ExecuteBufferedAsync();
 
     var projects = commandResult.StandardOutput
@@ -343,12 +369,12 @@ internal class DotNetService(IConsole _console, DirectoryConfiguration _director
       var folderPath = Path.GetDirectoryName(csprojPath)!;
 
       // resolve the .. and . in the path
-      folderPath = Path.GetFullPath(folderPath);
+      var csprojFileName = Path.GetFileName(csprojPath)!;
 
 
       var commandResult = await DotNet
           .WithWorkingDirectory(folderPath)
-          .WithArguments($"list \"{csprojPath}\" package --format json")
+          .WithArguments($"list \"{csprojFileName}\" package --format json")
           .ExecuteBufferedAsync();
 
       var json = commandResult.StandardOutput;

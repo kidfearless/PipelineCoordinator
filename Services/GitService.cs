@@ -30,7 +30,7 @@ internal class GitService(GithubService _github, IConsole _console, DirectoryCon
     var gitIgnorePath = Path.Combine(path, ".gitignore");
     if(File.Exists(gitIgnorePath))
     {
-      await File.AppendAllTextAsync(gitIgnorePath, "*override.*");
+      await File.AppendAllTextAsync(gitIgnorePath, $"{Environment.NewLine}*override.*");
     }
   }
 
@@ -91,12 +91,9 @@ internal class GitService(GithubService _github, IConsole _console, DirectoryCon
   private async Task<string> FindCommitAsync(string repoDir, string commitMessage)
   {
     _console.WriteLine($"Searching for commit: {commitMessage}");
-    var result = await Git
-        .WithWorkingDirectory(repoDir)
-        .WithArguments($"log --grep='^{commitMessage}$' -n 1 --pretty=format:%H")
-        .ExecuteBufferedAsync();
-    var commitHash = result.StandardOutput ?? result.StandardOutput;
-    return commitHash ?? "";
+    var result = await Git.WithWorkingDirectory(repoDir).WithArguments($"rev-list --all --grep=\"^{commitMessage}$\" -n 1").ExecuteBufferedAsync();
+    var commitHash = result.StandardOutput?.Trim() ?? result.StandardError?.Trim() ?? "";
+    return commitHash;
   }
 
   private async Task RevertCommitAsync(string repoDir, string commitMessage)
@@ -106,7 +103,7 @@ internal class GitService(GithubService _github, IConsole _console, DirectoryCon
     var _ = await Git
         .WithWorkingDirectory(repoDir)
         .WithArguments($"revert {commitHash}")
-        .ExecuteAsync();
+        .ExecuteBufferedAsync();
   }
 
   private async Task MarkFeatureAsync(string repoDir, string storyId)

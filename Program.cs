@@ -14,6 +14,7 @@ serviceCollection.AddTransient<GitService>();
 serviceCollection.AddTransient<AzureService>();
 serviceCollection.AddTransient<DotNetService>();
 serviceCollection.AddTransient<StartCommand>();
+serviceCollection.AddTransient<FinishCommand>();
 serviceCollection.AddSingleton<IConsole, SystemConsole>();
 var builder = new CliApplicationBuilder();
 
@@ -27,6 +28,7 @@ var configuration = configurationBuilder.Build();
 serviceCollection.AddSingleton<IConfiguration>(configuration);
 serviceCollection.AddSingleton<DirectoryConfiguration>(t => configuration.Get<AppSettings>()!.DirectoryInfo);
 builder.AddCommand<StartCommand>();
+builder.AddCommand<FinishCommand>();
 
 
 var provider = serviceCollection.BuildServiceProvider();
