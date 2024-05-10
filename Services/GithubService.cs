@@ -3,17 +3,21 @@ global using CliWrap.Buffered;
 
 using CliFx.Infrastructure;
 
+using PipelineCoordinator.Commands;
+
 
 
 namespace PipelineCoordinator.Services;
-internal class GithubService(IConsole _console)
+internal class GithubService
 {
-  private static Command GH()
-  {
-    var wrap = Cli.Wrap("gh")
-        .WithValidation(CommandResultValidation.None);
+  public ICLICommand GH { get; }
+    private readonly IConsole _console;
 
-    return wrap;
+  public GithubService(IConsole _console, ICLICommand command)
+  {
+    this._console = _console;
+    GH = command.WithTargetFile("gh")
+      .WithValidation(CommandResultValidation.None);
   }
 
   public async Task<BufferedCommandResult> CloneRepo(string path, string repoName)
@@ -25,7 +29,7 @@ internal class GithubService(IConsole _console)
     }
 
     _console.WriteLine($"Cloning {repoName}...");
-    var result = await GH()
+    var result = await (GH as Command)
         .WithArguments(@$"repo clone {repoName} {path}")
         .WithWorkingDirectory(path)
         .ExecuteBufferedAsync();

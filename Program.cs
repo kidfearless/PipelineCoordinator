@@ -9,38 +9,52 @@ using PipelineCoordinator.Models;
 using PipelineCoordinator.Services;
 
 var serviceCollection = new ServiceCollection();
+#if DEBUG
+serviceCollection.AddTransient<ICLICommand, MockCLICommand>(
+  t => new("", TimeSpan.FromSeconds(2)));
+#else
+serviceCollection.AddTransient<ICLICommand, CLICommand>(t => new(""));
+#endif
 serviceCollection.AddTransient<GithubService>();
 serviceCollection.AddTransient<GitService>();
 serviceCollection.AddTransient<AzureService>();
 serviceCollection.AddTransient<DotNetService>();
 serviceCollection.AddTransient<StartCommand>();
+serviceCollection.AddTransient<FinishCommand>();
+serviceCollection.AddTransient<ListenCommand>();
+serviceCollection.AddTransient<FindCommand>();
+serviceCollection.AddTransient<PushCommand>();
 serviceCollection.AddSingleton<IConsole, SystemConsole>();
 var builder = new CliApplicationBuilder();
 
 var configurationBuilder = new ConfigurationBuilder()
-    .SetBasePath(Directory.GetCurrentDirectory())
     .AddJsonFile("Resources/repos.json", optional: true, reloadOnChange: true)
     .AddEnvironmentVariables();
 
 var configuration = configurationBuilder.Build();
 
 serviceCollection.AddSingleton<IConfiguration>(configuration);
-serviceCollection.AddTransient<DirectoryConfiguration>(t => configuration.Get<AppSettings>()!.DirectoryInfo);
-builder.AddCommand<StartCommand>();
 
+var directoryInfo = configuration.GetSection("DirectoryInfo").Get<DirectoryConfiguration>();
+var appSettings = new AppSettings(directoryInfo);
+serviceCollection.AddSingleton(appSettings);
+serviceCollection.AddSingleton(directoryInfo);
+
+builder.AddCommand<StartCommand>();
+builder.AddCommand<FinishCommand>();
+builder.AddCommand<ListenCommand>();
+builder.AddCommand<FindCommand>();
+builder.AddCommand<PushCommand>();
 
 var provider = serviceCollection.BuildServiceProvider();
 builder.UseTypeActivator(commandTypes => provider);
-
 
 var con = builder.Build();
 if (System.Diagnostics.Debugger.IsAttached)
 {
   Console.WriteLine("Please enter a command to run");
   var command = Console.ReadLine()!;
-  Console.WriteLine("Please enter a story number to run against");
-  var story = Console.ReadLine()!;
-  await con.RunAsync([command, story]);
+  await con.RunAsync(command.Split(" "));
 }
 else
 {

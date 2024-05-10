@@ -1,3 +1,3 @@
 ﻿namespace PipelineCoordinator.Models;
 
-internal record AppSettings(DirectoryConfiguration DirectoryInfo);
+public record AppSettings(DirectoryConfiguration DirectoryInfo);

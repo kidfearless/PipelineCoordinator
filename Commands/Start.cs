@@ -1,4 +1,7 @@
 ﻿namespace PipelineCoordinator.Commands;
+
+using System.Runtime.CompilerServices;
+
 using CliFx;
 using CliFx.Attributes;
 using CliFx.Infrastructure;
