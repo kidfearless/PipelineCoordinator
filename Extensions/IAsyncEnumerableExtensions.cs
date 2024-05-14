@@ -10,3 +10,14 @@
     return list;
   }
 }
+
+internal static class IEnumerableExtensions
+{
+  public static T GetRandom<T>(this IEnumerable<T> values)
+  {
+    var random = new Random();
+    var count = values.Count();
+    var index = random.Next(count);
+    return values.ElementAt(index);
+  }
+}

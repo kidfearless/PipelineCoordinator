@@ -23,10 +23,13 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <Compile Remove="nupkg\**" />
         <Compile Remove="PipelineCoordinator.Service\**" />
         <Compile Remove="publish\**" />
+        <EmbeddedResource Remove="nupkg\**" />
         <EmbeddedResource Remove="PipelineCoordinator.Service\**" />
         <EmbeddedResource Remove="publish\**" />
+        <None Remove="nupkg\**" />
         <None Remove="PipelineCoordinator.Service\**" />
         <None Remove="publish\**" />
     </ItemGroup>
@@ -58,10 +61,6 @@
         <Content Include="Resources\repos.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </Content>
-    </ItemGroup>
-
-    <ItemGroup>
-      <Folder Include="NewFolder\" />
     </ItemGroup>
 
 </Project>

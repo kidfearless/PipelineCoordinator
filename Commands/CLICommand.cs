@@ -1,197 +1,171 @@
 ﻿namespace PipelineCoordinator.Commands;
 
+using System.Diagnostics;
+using System.Diagnostics.Contracts;
+using System.Threading;
+using System.Threading.Tasks;
+
+using CliWrap.Buffered;
 using CliWrap.Builders;
 
-internal class CLICommand : Command, ICLICommand
+[DebuggerStepThrough]
+internal class CLICommand : ICommandConfiguration, ICLICommand
 {
-  public CLICommand(string targetFilePath) : base(targetFilePath)
+  public string TargetFilePath { get; set; } = null!;
+  public string? Arguments { get; set; }
+  public string? WorkingDirPath { get; set; }
+  public Credentials? Credentials { get; set; }
+  public IReadOnlyDictionary<string, string?>? EnvironmentVariables { get; set; }
+  public CommandResultValidation Validation { get; set; }
+  public PipeSource? StandardInputPipe { get; set; }
+  public PipeTarget? StandardOutputPipe { get; set; }
+  public PipeTarget? StandardErrorPipe { get; set; }
+
+  public ICLICommand WithTargetFile(string targetFilePath)
   {
+    var copy = MemberwiseClone() as ICLICommand;
+    copy.TargetFilePath = targetFilePath;
+    return copy;
   }
 
-  public CLICommand() : base("")
-  {
 
+  public ICLICommand WithArguments(string arguments)
+  {
+    var copy = MemberwiseClone() as ICLICommand;
+    copy.Arguments = arguments;
+    return copy;
   }
 
-  private CLICommand(
-      string targetFilePath,
-      string arguments,
-      string workingDirPath,
-      Credentials credentials,
-      IReadOnlyDictionary<string, string?> environmentVariables,
-      CommandResultValidation validation,
-      PipeSource standardInputPipe,
-      PipeTarget standardOutputPipe,
-      PipeTarget standardErrorPipe
-  ) : base(
-      targetFilePath,
-      arguments,
-      workingDirPath,
-      credentials,
-      environmentVariables,
-      validation,
-      standardInputPipe,
-      standardOutputPipe,
-      standardErrorPipe
-  )
+
+  public ICLICommand WithArguments(IEnumerable<string> arguments, bool escape)
   {
+    return WithArguments(args => args.Add(arguments, escape));
   }
 
-  public new ICLICommand WithTargetFile(string targetFilePath) =>
-      new CLICommand(
-          targetFilePath,
-          Arguments,
-          WorkingDirPath,
-          Credentials,
-          EnvironmentVariables,
-          Validation,
-          StandardInputPipe,
-          StandardOutputPipe,
-          StandardErrorPipe
-      );
 
-  public new ICLICommand WithArguments(string arguments) =>
-      new CLICommand(
-          TargetFilePath,
-          arguments,
-          WorkingDirPath,
-          Credentials,
-          EnvironmentVariables,
-          Validation,
-          StandardInputPipe,
-          StandardOutputPipe,
-          StandardErrorPipe
-      );
-
-  public new ICLICommand WithArguments(IEnumerable<string> arguments, bool escape)
+  public ICLICommand WithArguments(IEnumerable<string> arguments)
   {
-    var builder = new ArgumentsBuilder();
-    builder.Add(arguments);
-    return new CLICommand(
-          TargetFilePath,
-          builder.Build(),
-          WorkingDirPath,
-          Credentials,
-          EnvironmentVariables,
-          Validation,
-          StandardInputPipe,
-          StandardOutputPipe,
-          StandardErrorPipe
-      );
+    return WithArguments(arguments, true);
   }
 
-  public new ICLICommand WithArguments(IEnumerable<string> arguments) =>
-      WithArguments(arguments, true);
 
-  public new ICLICommand WithArguments(Action<ArgumentsBuilder> configure)
+  public ICLICommand WithArguments(Action<ArgumentsBuilder> configure)
   {
     var builder = new ArgumentsBuilder();
     configure(builder);
     return WithArguments(builder.Build());
   }
 
-  public new ICLICommand WithWorkingDirectory(string workingDirPath) =>
-      new CLICommand(
-          TargetFilePath,
-          Arguments,
-          workingDirPath,
-          Credentials,
-          EnvironmentVariables,
-          Validation,
-          StandardInputPipe,
-          StandardOutputPipe,
-          StandardErrorPipe
-      );
 
-  public new ICLICommand WithCredentials(Credentials credentials) =>
-      new CLICommand(
-          TargetFilePath,
-          Arguments,
-          WorkingDirPath,
-          credentials,
-          EnvironmentVariables,
-          Validation,
-          StandardInputPipe,
-          StandardOutputPipe,
-          StandardErrorPipe
-      );
+  public ICLICommand WithWorkingDirectory(string workingDirPath)
+  {
+    var copy = MemberwiseClone() as ICLICommand;
+    copy.WorkingDirPath = workingDirPath;
+    return copy;
+  }
 
-  public new ICLICommand WithCredentials(Action<CredentialsBuilder> configure)
+
+  public ICLICommand WithCredentials(Credentials credentials)
+  {
+    var copy = MemberwiseClone() as ICLICommand;
+    copy.Credentials = credentials;
+    return copy;
+  }
+
+
+  public ICLICommand WithCredentials(Action<CredentialsBuilder> configure)
   {
     var builder = new CredentialsBuilder();
     configure(builder);
     return WithCredentials(builder.Build());
   }
 
-  public new ICLICommand WithEnvironmentVariables(IReadOnlyDictionary<string, string?> environmentVariables) =>
-      new CLICommand(
-          TargetFilePath,
-          Arguments,
-          WorkingDirPath,
-          Credentials,
-          environmentVariables,
-          Validation,
-          StandardInputPipe,
-          StandardOutputPipe,
-          StandardErrorPipe
-      );
 
-  public new ICLICommand WithEnvironmentVariables(Action<EnvironmentVariablesBuilder> configure)
+  public ICLICommand WithEnvironmentVariables(IReadOnlyDictionary<string, string?> environmentVariables)
+  {
+    var copy = MemberwiseClone() as ICLICommand;
+    copy.EnvironmentVariables = environmentVariables;
+    return copy;
+  }
+
+
+  public ICLICommand WithEnvironmentVariables(Action<EnvironmentVariablesBuilder> configure)
   {
     var builder = new EnvironmentVariablesBuilder();
     configure(builder);
     return WithEnvironmentVariables(builder.Build());
   }
 
-  public new ICLICommand WithValidation(CommandResultValidation validation) =>
-      new CLICommand(
-          TargetFilePath,
-          Arguments,
-          WorkingDirPath,
-          Credentials,
-          EnvironmentVariables,
-          validation,
-          StandardInputPipe,
-          StandardOutputPipe,
-          StandardErrorPipe
-      );
 
-  public new ICLICommand WithStandardInputPipe(PipeSource source) =>
-      new CLICommand(
-          TargetFilePath,
-          Arguments,
-          WorkingDirPath,
-          Credentials,
-          EnvironmentVariables,
-          Validation,
-          source,
-          StandardOutputPipe,
-          StandardErrorPipe
-      );
+  public ICLICommand WithValidation(CommandResultValidation validation)
+  {
+    var copy = MemberwiseClone() as ICLICommand;
+    copy.Validation = validation;
+    return copy;
+  }
 
-  public new ICLICommand WithStandardOutputPipe(PipeTarget target) =>
-      new CLICommand(
-          TargetFilePath,
-          Arguments,
-          WorkingDirPath,
-          Credentials,
-          EnvironmentVariables,
-          Validation,
-          StandardInputPipe,
-          target,
-          StandardErrorPipe
-      );
 
-  public new ICLICommand WithStandardErrorPipe(PipeTarget target) =>
-      new CLICommand(
-          TargetFilePath,
-          Arguments,
-          WorkingDirPath,
-          Credentials,
-          EnvironmentVariables,
-          Validation,
-          StandardInputPipe,
-          StandardOutputPipe,
-          target
-      );
+  public ICLICommand WithStandardInputPipe(PipeSource source)
+  {
+    var copy = MemberwiseClone() as ICLICommand;
+    copy.StandardInputPipe = source;
+    return copy;
+  }
+
+
+  public ICLICommand WithStandardOutputPipe(PipeTarget target)
+  {
+    var copy = MemberwiseClone() as ICLICommand;
+    copy.StandardOutputPipe = target;
+    return copy;
+  }
+
+
+  public ICLICommand WithStandardErrorPipe(PipeTarget target)
+  {
+    var copy = MemberwiseClone() as ICLICommand;
+    copy.StandardErrorPipe = target;
+    return copy;
+  }
+
+  public Command ToCommand()
+  {
+    return new Command(
+        TargetFilePath,
+        Arguments!,
+        WorkingDirPath!,
+        Credentials!,
+        EnvironmentVariables!,
+        Validation,
+        StandardInputPipe!,
+        StandardOutputPipe!,
+        StandardErrorPipe!
+    );
+  }
+
+  public async Task<CommandResult> ExecuteAsync(CancellationToken cancellationToken = default)
+  {
+    try
+    {
+      var result = await ToCommand().ExecuteAsync(cancellationToken);
+      return result;
+    }
+    catch
+    {
+      return new CommandResult(-1, default, default);
+    }
+  }
+
+  public async Task<BufferedCommandResult> ExecuteBufferedAsync(CancellationToken cancellationToken = default)
+  {
+    try
+    {
+      var result = await ToCommand().ExecuteBufferedAsync(cancellationToken);
+      return result;
+    }
+    catch (Exception ex)
+    {
+      return new BufferedCommandResult(-1, default, default, "", ex.ToString());
+    }
+  }
 }

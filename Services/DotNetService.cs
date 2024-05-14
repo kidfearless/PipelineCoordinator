@@ -11,13 +11,13 @@ using System.Xml;
 using System;
 using PipelineCoordinator.Commands;
 
-public class DotNetService
+internal class DotNetService
 {
   private readonly IConsole _console;
   private readonly DirectoryConfiguration _directory;
 
   private ICLICommand DotNet { get; }
-      
+  public string StoryId { get; private set; }
 
   public DotNetService(IConsole console, DirectoryConfiguration directory, ICLICommand command)
   {
@@ -25,12 +25,13 @@ public class DotNetService
     _directory = directory;
     DotNet = command.WithTargetFile("dotnet")
       .WithValidation(CommandResultValidation.None)
-      .WithStandardOutputPipe(PipeTarget.ToStream(_console.Output.BaseStream))
-      .WithStandardErrorPipe(PipeTarget.ToStream(_console.Error.BaseStream));
+      .WithStandardOutputPipe(PipeTarget.ToDelegate((a) => _console.WriteLine(a)))
+      .WithStandardErrorPipe(PipeTarget.ToDelegate((a) => _console.WriteLine(a)));
   }
 
   public async Task InitializeRepos(string storyId)
   {
+    this.StoryId = storyId;
     var featureDirectory = Path.Combine(_directory.RootDirectory, storyId);
     var solutionFiles = Directory.GetFiles(featureDirectory, "*.sln", SearchOption.AllDirectories);
 
@@ -77,9 +78,12 @@ public class DotNetService
 
   private async Task<List<string>> GetProjectsInSolutionAsync(string solutionFolder, string solutionFileName)
   {
+    var mockRepo = _directory.Repositories.GetRandom();
+    var mockPath = Path.Join(solutionFolder, StoryId, mockRepo.Path);
     var commandResult = await DotNet
         .WithWorkingDirectory(solutionFolder)
         .WithArguments($"sln {solutionFileName} list")
+        .WithMockOutput(mockPath)
         .ExecuteBufferedAsync();
 
     var projects = commandResult.StandardOutput
@@ -106,7 +110,7 @@ public class DotNetService
 
     var importElement = doc.CreateElement("Import");
     importElement.SetAttribute("Project", projectPath);
-    doc.DocumentElement.AppendChild(importElement);
+    doc.DocumentElement!.AppendChild(importElement);
 
     var itemGroupElement = doc.CreateElement("ItemGroup");
     doc.DocumentElement.AppendChild(itemGroupElement);
@@ -131,7 +135,7 @@ public class DotNetService
     await DotNet
         .WithWorkingDirectory(solutionFolder)
         .WithArguments($"sln {solutionName} add {projectPath}")
-        .ExecuteBufferedAsync();
+        .ExecuteAsync();
   }
 
   private async Task CleanSolutionFileAsync(string overrideSolutionFile)
@@ -181,7 +185,7 @@ public class DotNetService
     var doc = new XmlDocument();
     doc.LoadXml(xml);
 
-    var itemGroup = doc.CreateElement("ItemGroup", doc.DocumentElement.NamespaceURI);
+    var itemGroup = doc.CreateElement("ItemGroup", doc.DocumentElement!.NamespaceURI);
 
     var projectReference = doc.CreateElement("ProjectReference", doc.DocumentElement.NamespaceURI);
     projectReference.SetAttribute("Include", importPath);
@@ -220,14 +224,14 @@ public class DotNetService
       compileRemoveElement.SetAttribute("Remove", "**");
       itemGroupElement.AppendChild(compileRemoveElement);
 
-      doc.DocumentElement.AppendChild(itemGroupElement);
+      doc.DocumentElement!.AppendChild(itemGroupElement);
 
       var projectReferences = doc.SelectNodes("//ProjectReference");
       if (projectReferences != null)
       {
         foreach (XmlNode projectReference in projectReferences)
         {
-          projectReference.ParentNode.RemoveChild(projectReference);
+          projectReference.ParentNode!.RemoveChild(projectReference);
         }
       }
 
@@ -241,10 +245,36 @@ public class DotNetService
     {
       var folderPath = Path.GetDirectoryName(csprojPath)!;
       var csprojFileName = Path.GetFileName(csprojPath)!;
+      var mockNuget = _directory.NugetPackages.GetRandom();
+      var mockNugetString = $"{{\"{mockNuget.ProjectName}\"}},";
+      var mockjson = @"{
+        ""projects"": [
+          {
+            ""frameworks"": [
+              {
+                ""framework"": "".NETCoreApp,Version=v6.0"",
+                ""topLevelPackages"": [
+                  {
+                    ""id"": ""Microsoft.AspNetCore.Authentication.JwtBearer"",
+                    ""version"": ""6.0.0""
+                  },
+                  "+ mockNugetString 
+                  + @"
+                  {
+                    ""id"": ""Swashbuckle.AspNetCore"",
+                    ""version"": ""6.2.3""
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }";
 
       var commandResult = await DotNet
           .WithWorkingDirectory(folderPath)
           .WithArguments($"list \"{csprojFileName}\" package --format json")
+          .WithMockOutput(mockjson)
           .ExecuteBufferedAsync();
 
       var json = commandResult.StandardOutput;

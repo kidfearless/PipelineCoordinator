@@ -1,20 +1,33 @@
 ﻿using CliFx.Infrastructure;
 
+using PipelineCoordinator.Commands;
 using PipelineCoordinator.Models;
 
 namespace PipelineCoordinator.Services;
 
-public class GitService(GithubService _github, IConsole _console, DirectoryConfiguration _directory)
+internal class GitService
 {
-  private Command Git => Cli.Wrap("git")
-          .WithValidation(CommandResultValidation.None)
-          .WithStandardOutputPipe(PipeTarget.ToStream(_console.Output.BaseStream))
-          .WithStandardErrorPipe(PipeTarget.ToStream(_console.Error.BaseStream));
+  private readonly GithubService _github;
+  private readonly IConsole _console;
+  private readonly DirectoryConfiguration _directory;
+  private ICLICommand Git { get; }
+
+  public GitService(GithubService github, IConsole console, DirectoryConfiguration directory, ICLICommand command)
+  {
+    this._github = github;
+    this._console = console;
+    this._directory = directory;
+    Git = command.WithTargetFile("git")
+         .WithValidation(CommandResultValidation.None)
+      .WithStandardOutputPipe(PipeTarget.ToDelegate((a) => _console.WriteLine(a)))
+      .WithStandardErrorPipe(PipeTarget.ToDelegate((a) => _console.WriteLine(a)));
+  }
+
 
   public async Task InitializeReposAsync(string storyId)
   {
     var rootDirectory = Path.Combine(_directory.RootDirectory, storyId);
-    foreach (var repo in _directory.Repos)
+    await Parallel.ForEachAsync(_directory.Repos, async (repo, t) =>
     {
       var path = Path.Combine(rootDirectory, repo.Path);
 
@@ -23,7 +36,7 @@ public class GitService(GithubService _github, IConsole _console, DirectoryConfi
       await CreateBranchAsync(path, storyId);
       await AddOverridesToGitIgnoreAsync(path);
       //await AddHooksAsync(path, repo, storyId);
-    }
+    });
   }
 
   private async Task AddHooksAsync(string path, RepositoryInfo repo, string storyId)
@@ -52,11 +65,11 @@ public class GitService(GithubService _github, IConsole _console, DirectoryConfi
   public async Task MarkFeaturesAsync(string storyId)
   {
     var rootDirectory = Path.Combine(_directory.RootDirectory, storyId);
-    foreach (var repo in _directory.Repos)
+    await Parallel.ForEachAsync(_directory.Repos, async (repo, t) =>
     {
       var path = Path.Combine(rootDirectory, repo.Path);
       await MarkFeatureAsync(path, storyId);
-    }
+    });
   }
 
   public async Task FinishReposAsync(string storyId)
@@ -82,7 +95,7 @@ public class GitService(GithubService _github, IConsole _console, DirectoryConfi
     var _ = await Git
         .WithWorkingDirectory(repoDir)
         .WithArguments($"config --global --add safe.directory {repoDir}")
-        .ExecAsync();
+        .ExecuteAsync();
   }
 
   private async Task CreateBranchAsync(string repoDir, string storyName)
@@ -91,7 +104,7 @@ public class GitService(GithubService _github, IConsole _console, DirectoryConfi
     var _ = await Git
         .WithWorkingDirectory(repoDir)
         .WithArguments($"checkout -b feature/story-{storyName} develop")
-        .ExecAsync();
+        .ExecuteAsync();
   }
 
   private async Task PublishBranchAsync(string repoDir, string storyName)
@@ -100,7 +113,7 @@ public class GitService(GithubService _github, IConsole _console, DirectoryConfi
     var _ = await Git
         .WithWorkingDirectory(repoDir)
         .WithArguments($"push --set-upstream origin feature/story-{storyName}")
-        .ExecAsync();
+        .ExecuteAsync();
   }
 
   public async Task TriggerBuildAsync(string repoDir, string storyName)
@@ -119,7 +132,7 @@ public class GitService(GithubService _github, IConsole _console, DirectoryConfi
     var _ = await Git
         .WithWorkingDirectory(repoDir)
         .WithArguments($"commit -m \"{message}\" --allow-empty")
-        .ExecAsync();
+        .ExecuteAsync();
   }
 
   private async Task<string> FindCommitAsync(string repoDir, string commitMessage)
@@ -137,7 +150,7 @@ public class GitService(GithubService _github, IConsole _console, DirectoryConfi
     var _ = await Git
         .WithWorkingDirectory(repoDir)
         .WithArguments($"revert {commitHash}")
-        .ExecuteBufferedAsync();
+        .ExecuteAsync();
   }
 
   private async Task MarkFeatureAsync(string repoDir, string storyId)
@@ -147,13 +160,13 @@ public class GitService(GithubService _github, IConsole _console, DirectoryConfi
     var _1 = await Git
         .WithWorkingDirectory(repoDir)
         .WithArguments($"add .")
-        .ExecAsync();
+        .ExecuteAsync();
 
     _console.WriteLine($"Committing start commit: {message}");
     var _2 = await Git
         .WithWorkingDirectory(repoDir)
         .WithArguments($"commit --message \"{message}\"")
-        .ExecuteBufferedAsync();
+        .ExecuteAsync();
   }
 
   public async Task FinishFeatureAsync(string repoDir, string storyId)
@@ -167,6 +180,7 @@ public class GitService(GithubService _github, IConsole _console, DirectoryConfi
     var result = await Git
         .WithWorkingDirectory(repoDir)
         .WithArguments($"ls-remote --heads origin feature/story-{storyId}")
+        .WithMockOutput("has remote")
         .ExecuteBufferedAsync();
 
     _console.WriteLine($"Checking for remote branch for: {repoDir}");

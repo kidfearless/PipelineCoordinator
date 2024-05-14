@@ -5,15 +5,15 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 using PipelineCoordinator.Commands;
+using PipelineCoordinator.Console;
 using PipelineCoordinator.Models;
 using PipelineCoordinator.Services;
 
 var serviceCollection = new ServiceCollection();
 #if DEBUG
-serviceCollection.AddTransient<ICLICommand, MockCLICommand>(
-  t => new("", TimeSpan.FromSeconds(2)));
+serviceCollection.AddTransient<ICLICommand, MockCLICommand>(t => new MockCLICommand(t.GetRequiredService<IConsole>()) { Delay = TimeSpan.FromSeconds(1) });
 #else
-serviceCollection.AddTransient<ICLICommand, CLICommand>(t => new(""));
+serviceCollection.AddTransient<ICLICommand, CLICommand>();
 #endif
 serviceCollection.AddTransient<GithubService>();
 serviceCollection.AddTransient<GitService>();
@@ -24,7 +24,7 @@ serviceCollection.AddTransient<FinishCommand>();
 serviceCollection.AddTransient<ListenCommand>();
 serviceCollection.AddTransient<FindCommand>();
 serviceCollection.AddTransient<PushCommand>();
-serviceCollection.AddSingleton<IConsole, SystemConsole>();
+serviceCollection.AddFileConsole($"console.{DateTime.Now.Ticks}.log");
 var builder = new CliApplicationBuilder();
 
 var configurationBuilder = new ConfigurationBuilder()
@@ -36,7 +36,7 @@ var configuration = configurationBuilder.Build();
 serviceCollection.AddSingleton<IConfiguration>(configuration);
 
 var directoryInfo = configuration.GetSection("DirectoryInfo").Get<DirectoryConfiguration>();
-var appSettings = new AppSettings(directoryInfo);
+var appSettings = new AppSettings(directoryInfo!);
 serviceCollection.AddSingleton(appSettings);
 serviceCollection.AddSingleton(directoryInfo);
 

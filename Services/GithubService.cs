@@ -11,16 +11,18 @@ namespace PipelineCoordinator.Services;
 internal class GithubService
 {
   public ICLICommand GH { get; }
-    private readonly IConsole _console;
+  private readonly IConsole _console;
 
   public GithubService(IConsole _console, ICLICommand command)
   {
     this._console = _console;
     GH = command.WithTargetFile("gh")
-      .WithValidation(CommandResultValidation.None);
+      .WithValidation(CommandResultValidation.None)
+      .WithStandardOutputPipe(PipeTarget.ToDelegate((a) => _console.WriteLine(a)))
+      .WithStandardErrorPipe(PipeTarget.ToDelegate((a) => _console.WriteLine(a)));
   }
 
-  public async Task<BufferedCommandResult> CloneRepo(string path, string repoName)
+  public async Task CloneRepo(string path, string repoName)
   {
     _console.WriteLine("Deleting old repos...");
     if (!Directory.Exists(path))
@@ -29,12 +31,10 @@ internal class GithubService
     }
 
     _console.WriteLine($"Cloning {repoName}...");
-    var result = await (GH as Command)
+    var result = await GH
         .WithArguments(@$"repo clone {repoName} {path}")
         .WithWorkingDirectory(path)
-        .ExecuteBufferedAsync();
-
-    return result;
+        .ExecuteAsync();
   }
 
   /// <summary>
