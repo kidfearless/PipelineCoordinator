@@ -150,7 +150,7 @@ internal class GitService
     var _ = await Git
         .WithWorkingDirectory(repoDir)
         .WithArguments($"revert {commitHash}")
-        .ExecuteAsync();
+        .ExecuteBufferedAsync();
   }
 
   private async Task MarkFeatureAsync(string repoDir, string storyId)
