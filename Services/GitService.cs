@@ -23,10 +23,43 @@ internal class GitService
       .WithStandardErrorPipe(PipeTarget.ToDelegate((a) => _console.WriteLine(a)));
   }
 
+  private static void DeleteDirectory(string targetDir)
+  {
+    File.SetAttributes(targetDir, FileAttributes.Normal);
+
+    var files = Directory.GetFiles(targetDir);
+    var dirs = Directory.GetDirectories(targetDir);
+
+    foreach (string file in files)
+    {
+      File.SetAttributes(file, FileAttributes.Normal);
+      File.Delete(file);
+    }
+
+    foreach (string dir in dirs)
+    {
+      DeleteDirectory(dir);
+    }
+
+    Directory.Delete(targetDir, false);
+  }
+
 
   public async Task InitializeReposAsync(string storyId)
   {
     var rootDirectory = Path.Combine(_directory.RootDirectory, storyId);
+
+    if (Directory.Exists(rootDirectory))
+    {
+        _console.WriteLine($"Directory {rootDirectory} already exists and is not empty. Deleting in 3 seconds...");
+        await Task.Delay(1000);
+        _console.WriteLine("2...");
+        await Task.Delay(1000);
+        _console.WriteLine("1...");
+        await Task.Delay(1000);
+        DeleteDirectory(rootDirectory);
+    }
+
     await Parallel.ForEachAsync(_directory.Repos, async (repo, t) =>
     {
       var path = Path.Combine(rootDirectory, repo.Path);

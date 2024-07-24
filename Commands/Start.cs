@@ -8,7 +8,7 @@ using CliFx.Infrastructure;
 
 using PipelineCoordinator.Services;
 
-[Command("start")]
+[Command("start", Description = "Clones a new development environment for the given Azure Story Number")]
 internal class StartCommand(GitService _git, DotNetService _dotnet, IConsole _console) : ICommand
 {
   [CommandParameter(0, Description = "The story ID.")]

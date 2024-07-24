@@ -75,4 +75,11 @@ internal static class FileConsoleExtensions
     services.AddSingleton<IConsole>(new FileConsole(filePath));
     return services;
   }
+
+  internal static IServiceCollection AddSystemConsole(this IServiceCollection serviceCollection)
+  {
+    serviceCollection.AddSingleton<IConsole, SystemConsole>();
+    return serviceCollection;
+  }
+
 }
