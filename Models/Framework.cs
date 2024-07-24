@@ -1,3 +1,3 @@
 ﻿namespace PipelineCoordinator.Models;
 
-internal record Framework(List<TopLevelPackage> TopLevelPackages);
+internal record Framework(HashSet<TopLevelPackage> TopLevelPackages);
