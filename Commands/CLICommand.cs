@@ -8,18 +8,17 @@ using System.Threading.Tasks;
 using CliWrap.Buffered;
 using CliWrap.Builders;
 
-[DebuggerStepThrough]
 internal class CLICommand : ICommandConfiguration, ICLICommand
 {
-  public string TargetFilePath { get; set; } = null!;
-  public string? Arguments { get; set; }
-  public string? WorkingDirPath { get; set; }
-  public Credentials? Credentials { get; set; }
-  public IReadOnlyDictionary<string, string?>? EnvironmentVariables { get; set; }
-  public CommandResultValidation Validation { get; set; }
-  public PipeSource? StandardInputPipe { get; set; }
-  public PipeTarget? StandardOutputPipe { get; set; }
-  public PipeTarget? StandardErrorPipe { get; set; }
+  public string TargetFilePath { get; set; } = "";
+  public string? Arguments { get; set; } = "";
+  public string? WorkingDirPath { get; set; } = Directory.GetCurrentDirectory();
+  public Credentials? Credentials { get; set; } = Credentials.Default;
+  public IReadOnlyDictionary<string, string?>? EnvironmentVariables { get; set; } = new Dictionary<string, string>();
+  public CommandResultValidation Validation { get; set; } = CommandResultValidation.ZeroExitCode;
+  public PipeSource? StandardInputPipe { get; set; } = PipeSource.Null;
+  public PipeTarget? StandardOutputPipe { get; set; } = PipeTarget.Null;
+  public PipeTarget? StandardErrorPipe { get; set; } = PipeTarget.Null;
 
   public ICLICommand WithTargetFile(string targetFilePath)
   {
@@ -147,7 +146,8 @@ internal class CLICommand : ICommandConfiguration, ICLICommand
   {
     try
     {
-      var result = await ToCommand().ExecuteAsync(cancellationToken);
+
+      var result = await ToCommand().ExecuteBufferedAsync(cancellationToken);
       return result;
     }
     catch
