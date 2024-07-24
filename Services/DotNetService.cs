@@ -35,13 +35,25 @@ internal class DotNetService
     var featureDirectory = Path.Combine(_directory.RootDirectory, storyId);
     var solutionFiles = Directory.GetFiles(featureDirectory, "*.sln", SearchOption.AllDirectories);
 
-    var tasks = new List<Task>();
     foreach (var solutionFile in solutionFiles)
     {
-      tasks.Add(ProcessSolutionAsync(solutionFile, storyId));
+      await RestoreSolutionAsync(solutionFile);
     }
 
-    await Task.WhenAll(tasks);
+    foreach (var solutionFile in solutionFiles)
+    {
+      await ProcessSolutionAsync(solutionFile, storyId);
+    }
+  }
+
+  private async Task RestoreSolutionAsync(string solutionPath)
+  {
+    var directory = Path.GetDirectoryName(solutionPath);
+    var fileName = Path.GetFileName(solutionPath);
+
+    await DotNet.WithWorkingDirectory(directory)
+      .WithArguments($"restore {fileName}")
+      .ExecuteAsync();
   }
 
   private async Task ProcessSolutionAsync(string solutionFile, string storyId)
@@ -54,13 +66,13 @@ internal class DotNetService
     await CreateSolutionAsync(solutionDirectory, Path.GetFileNameWithoutExtension(overrideFileName));
 
     var projects = await GetProjectsInSolutionAsync(solutionDirectory, solutionName);
-    var overrideProjects = new List<string>();
+    var overrideProjects = new List<(string OverridePath, string ProjectPath)>();
 
     foreach (var project in projects)
     {
       var projectPath = Path.Combine(solutionDirectory, project);
       var overrideProjectPath = await CreateOverrideProjectAsync(projectPath);
-      overrideProjects.Add(overrideProjectPath);
+      overrideProjects.Add((overrideProjectPath, projectPath));
       await AddProjectToSolutionAsync(overrideSolutionFile, overrideProjectPath);
     }
 
@@ -157,23 +169,22 @@ internal class DotNetService
     await File.WriteAllLinesAsync(overrideSolutionFile, newFileText);
   }
 
-  private async Task ReplaceNugetWithLocalReferencesAsync(List<string> overrideProjects)
+  private async Task ReplaceNugetWithLocalReferencesAsync(List<(string OverridePath, string ProjectPath)> overrideProjects)
   {
-    foreach (var overrideProject in overrideProjects)
+    foreach (var pair in overrideProjects)
     {
-      var nugetPackages = await GetNugetPackagesAsync(overrideProject);
-      foreach (var nuget in _directory.NugetPackages)
+      var nugetPackages = await GetNugetPackagesAsync(pair.ProjectPath);
+      foreach (var nugetpackage in nugetPackages)
       {
-        var hasNugetPackage = nugetPackages.Contains(nuget.ProjectName);
-        if (hasNugetPackage)
+        var reference = _directory.NugetPackages.FirstOrDefault(t => t.ProjectName == nugetpackage);
+        if (reference is not null)
         {
-          var nugetPath = Directory.GetFiles(Path.GetDirectoryName(overrideProject)!, $"{nuget.ProjectName}.csproj", SearchOption.AllDirectories)
-              .FirstOrDefault();
 
-          if (nugetPath != null)
-          {
-            AddLocalReference(overrideProject, nugetPath, nuget.ProjectName);
-          }
+          var resolvedPath = Path.Join(_directory.RootDirectory, reference.Path, $"{reference.ProjectName}.csproj");
+          var overrideReference = overrideProjects.FirstOrDefault(t => t.ProjectPath == resolvedPath);
+
+
+          AddLocalReference(pair.OverridePath, overrideReference.OverridePath ?? resolvedPath, reference.ProjectName);
         }
       }
     }
@@ -258,7 +269,7 @@ internal class DotNetService
                     ""id"": ""Microsoft.AspNetCore.Authentication.JwtBearer"",
                     ""version"": ""6.0.0""
                   },
-                  "+ mockNugetString 
+                  " + mockNugetString
                   + @"
                   {
                     ""id"": ""Swashbuckle.AspNetCore"",
